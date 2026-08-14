@@ -1,7 +1,6 @@
 'use strict';
 
 const crypto = require('crypto');
-const https = require('https');
 const nconf = require.main.require('nconf');
 let translator;
 try {
@@ -215,10 +214,8 @@ plugin.sendTzintuk = async function (phone) {
         });
 
         const url = `${baseUrl}?${params.toString()}`;
-        
-        const agent = new https.Agent({ rejectUnauthorized: false });
-        
-        const response = await fetch(url, { method: 'GET', agent: agent });
+
+        const response = await fetch(url, { method: 'GET' });
 
         if (!response.ok) return { success: false, error: 'VOICE_SERVER_ERROR', message: plugin.tx('error.call-server-response') };
         
@@ -496,7 +493,9 @@ plugin.addFieldRegister = async function (data) {
     data.templateData.regFormEntry.push({
         id: 'phone-verification-container',
         inputId: 'phoneNumber',
-        label: '[[phone-verification:field.phone-number]] *',
+        // Must be a single clean [[...]] token: core renders the label via the
+        // tx() template helper, which only parses tokens with no trailing text.
+        label: '[[phone-verification:field.phone-number-required]]',
         html: html,
     });
 
@@ -554,29 +553,6 @@ plugin.addAdminNavigation = async function (header) {
 
 plugin.whitelistFields = async function (data) {
     data.whitelist.push(PHONE_FIELD_KEY, 'phoneVerified', 'phoneVerifiedAt', 'showPhone');
-    return data;
-};
-
-plugin.addPhoneToAccount = async function (data) {
-    if (data.userData && data.userData.uid) {
-        const phoneData = await plugin.getUserPhone(data.userData.uid);
-        if (phoneData) {
-            data.userData.phoneNumber = phoneData.phone;
-            data.userData.phoneVerified = phoneData.phoneVerified;
-        }
-        const showPhone = await db.getObjectField(`user:${data.userData.uid}`, 'showPhone');
-        data.userData.showPhone = showPhone === '1' || showPhone === 1;
-    }
-    return data;
-};
-
-plugin.loadScript = async function (data) {
-    const pagesToLoad = ['register', 'account/edit', 'account/profile'];
-    if (pagesToLoad.includes(data.tpl_url) || pagesToLoad.includes(data.tpl)) {
-        if (!data.scripts.includes('forum/phone-verification')) {
-            data.scripts.push('forum/phone-verification');
-        }
-    }
     return data;
 };
 
