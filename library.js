@@ -1,7 +1,6 @@
 'use strict';
 
 const crypto = require('crypto');
-const https = require('https');
 const nconf = require.main.require('nconf');
 let translator;
 try {
@@ -230,10 +229,8 @@ plugin.sendTzintuk = async function (phone) {
         });
 
         const url = `${baseUrl}?${params.toString()}`;
-        
-        const agent = new https.Agent({ rejectUnauthorized: false });
-        
-        const response = await fetch(url, { method: 'GET', agent: agent });
+
+        const response = await fetch(url, { method: 'GET' });
 
         if (!response.ok) return { success: false, error: 'VOICE_SERVER_ERROR', message: plugin.tx('error.call-server-response') };
         
@@ -596,29 +593,6 @@ plugin.addAdminNavigation = async function (header) {
 
 plugin.whitelistFields = async function (data) {
     data.whitelist.push(PHONE_FIELD_KEY, 'phoneVerified', 'phoneVerifiedAt', 'showPhone');
-    return data;
-};
-
-plugin.addPhoneToAccount = async function (data) {
-    if (data.userData && data.userData.uid) {
-        const phoneData = await plugin.getUserPhone(data.userData.uid);
-        if (phoneData) {
-            data.userData.phoneNumber = phoneData.phone;
-            data.userData.phoneVerified = phoneData.phoneVerified;
-        }
-        const showPhone = await db.getObjectField(`user:${data.userData.uid}`, 'showPhone');
-        data.userData.showPhone = showPhone === '1' || showPhone === 1;
-    }
-    return data;
-};
-
-plugin.loadScript = async function (data) {
-    const pagesToLoad = ['register', 'account/edit', 'account/profile'];
-    if (pagesToLoad.includes(data.tpl_url) || pagesToLoad.includes(data.tpl)) {
-        if (!data.scripts.includes('forum/phone-verification')) {
-            data.scripts.push('forum/phone-verification');
-        }
-    }
     return data;
 };
 
@@ -1127,11 +1101,15 @@ plugin.apiAdminGetUserPhone = async function (req, res) {
 
 plugin.userDelete = async function (data) {
     try {
-        const phones = await db.getSortedSetRangeByScore('phone:uid', data.uid, 1, data.uid);
-        if (phones[0]) {
-            await db.sortedSetRemove('phone:uid', phones[0]);
-            await db.sortedSetRemove('users:phone', data.uid);
+        // `phone:uid` stores member=phone, score=uid, so the deleted user's phone
+        // numbers are the members whose score equals their uid. The previous call
+        // passed the uid as `start` with no `max`, so nothing was ever matched and
+        // the number stayed in the set, blocking it from being registered again.
+        const phones = await db.getSortedSetRangeByScore('phone:uid', 0, -1, data.uid, data.uid);
+        if (phones && phones.length) {
+            await db.sortedSetRemove('phone:uid', phones);
         }
+        await db.sortedSetRemove('users:phone', data.uid);
     } catch (e) {}
 };
 
